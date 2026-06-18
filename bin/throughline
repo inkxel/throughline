@@ -1,0 +1,74 @@
+#!/bin/sh
+# throughline — CLI dispatcher for the Throughline knowledge-layer scaffolder.
+#
+# Usage:
+#   throughline init [repo-path]              scaffold knowledge/ into a repo
+#   throughline export [knowledge-dir] [-o OUT]  export via OKF
+#   throughline help | -h                     print this usage
+#
+# Resolves its own real location (handles symlinks) so it works when installed
+# as ~/.local/bin/throughline → /path/to/clone/bin/throughline.
+
+set -eu
+
+# ---------- locate the repo root regardless of symlinks ----------
+# Try readlink -f (GNU / BSD with -f), fall back to a manual walk.
+_resolve() {
+  _p="$1"
+  if command -v readlink >/dev/null 2>&1; then
+    _r="$(readlink -f "$_p" 2>/dev/null || true)"
+    [ -n "$_r" ] && { printf '%s' "$_r"; return; }
+  fi
+  # Manual walk: follow one level at a time (POSIX sh, no readlink -f)
+  while [ -L "$_p" ]; do
+    _target="$(readlink "$_p")"
+    case "$_target" in
+      /*) _p="$_target" ;;
+      *)  _p="$(dirname "$_p")/$_target" ;;
+    esac
+  done
+  printf '%s' "$_p"
+}
+
+SELF="$(_resolve "$0")"
+BIN_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+REPO_ROOT="$(cd "$BIN_DIR/.." && pwd)"
+
+# ---------- usage ----------
+usage() {
+  cat <<'EOF'
+throughline — knowledge-layer scaffolder
+
+Usage:
+  throughline init [repo-path]               scaffold knowledge/ into a repo
+  throughline export [knowledge-dir] [-o OUT] export to OKF format
+  throughline help | -h                      show this message
+
+Examples:
+  throughline init                           scaffold into the current directory
+  throughline init ~/projects/my-repo        scaffold into a specific repo
+  throughline export knowledge/ -o out.json  export the knowledge layer
+EOF
+}
+
+# ---------- dispatch ----------
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  init)
+    exec sh "$REPO_ROOT/scripts/init.sh" "$@"
+    ;;
+  export)
+    exec python3 "$REPO_ROOT/scripts/okf-export.py" "$@"
+    ;;
+  help|-h|--help)
+    usage
+    exit 0
+    ;;
+  *)
+    printf 'throughline: unknown command: %s\n\n' "$cmd" >&2
+    usage >&2
+    exit 1
+    ;;
+esac

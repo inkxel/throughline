@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# default OKF export output dir
+okf/
+
+# scaffolder hook state (harmless here; relevant inside scaffolded repos)
+knowledge/journal/.last-breadcrumb
+knowledge/journal/.last-codemap

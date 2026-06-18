@@ -4,7 +4,7 @@
 **Date:** 2026-06-06
 **Scope:** All five ranked items from the "What to build" list are complete. The scoped-out list is unchanged.
 
-> This repo is a *skill package*, not itself a knowledge-layer instance, so it has no
+> This repo is a *tool*, not itself a knowledge layer instance, so it has no
 > `decisions/` dir or `roadmap.md` of its own — its conventions live in `SKILL.md`,
 > `README.md`, this `references/` folder, and the `assets/` template. This note is the
 > repo's roadmap-plus-ADR for one planned evolution, filed where the skill's deeper
@@ -15,7 +15,7 @@
 
 ## Context — the gap this closes
 
-The knowledge-layer captures the **WHY** of a build: curated wiki, append-only journal,
+The knowledge layer captures the **WHY** of a build: curated wiki, append-only journal,
 ADR decision records, a roadmap parking lot. It deliberately does *not* capture the
 **WHAT/HOW** of the code's *current structure* — which modules exist, which symbols
 matter, what calls/imports what. Today an agent that wants "what's wired" has to **grep**,
@@ -28,9 +28,9 @@ call-graph — no LLM), refreshed by a git hook, queried as a subgraph. Full eva
 (see this roadmap note's Sources).
 
 The two tools are **complementary, not competing** — graphify is the structural WHAT/HOW;
-the knowledge-layer is the curated WHY (graphify is explicitly weak on "why," which is
+the knowledge layer is the curated WHY (graphify is explicitly weak on "why," which is
 precisely our journal + ADRs). The directive here is **not** to install graphify alongside
-every project. It's to **borrow the pieces that earn their keep into the knowledge-layer
+every project. It's to **borrow the pieces that earn their keep into the knowledge layer
 itself**, and keep it lean.
 
 ## Decision (proposed)

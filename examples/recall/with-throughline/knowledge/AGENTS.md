@@ -1,8 +1,8 @@
-# {{PROJECT_NAME}} — Knowledge Layer (AGENTS.md)
+# session-service — Knowledge Layer (AGENTS.md)
 
-> **What {{PROJECT_NAME}} is.** {{ONE_LINE_DESCRIPTION}}
+> **What session-service is.** A tiny HTTP service that issues, validates, and revokes user sessions, backed by a durable on-disk session cache.
 
-This is the **canonical** agent-instructions file for this knowledge layer, per the cross-tool [AGENTS.md](https://agents.md) standard — any agent (Claude Code, Cursor, Codex, Aider, …) reads it. The sibling `knowledge/CLAUDE.md` is a thin pointer back here; keep the orientation in this file, not duplicated there. Claude Code discovers this layer when a session opens `{{PROJECT_DIR}}/knowledge/` (the `CLAUDE.md` pointer triggers progressive loading, which leads here). Read it before doing architectural work. The wiki below documents how {{PROJECT_NAME}} is built, why it's shaped that way, and what's still open.
+This is the **canonical** agent-instructions file for this knowledge layer, per the cross-tool [AGENTS.md](https://agents.md) standard — any agent (Claude Code, Cursor, Codex, Aider, …) reads it. The sibling `knowledge/CLAUDE.md` is a thin pointer back here; keep the orientation in this file, not duplicated there. Claude Code discovers this layer when a session opens `examples/recall/with-throughline/knowledge/` (the `CLAUDE.md` pointer triggers progressive loading, which leads here). Read it before doing architectural work. The wiki below documents how session-service is built, why it's shaped that way, and what's still open.
 
 ---
 
@@ -10,12 +10,12 @@ This is the **canonical** agent-instructions file for this knowledge layer, per 
 
 A mini wiki + per-session journal + decision records + roadmap, living inside the code repo at `knowledge/`. It exists because rationale surfaces in build sessions, gets parked verbally, then gets lost. This layer makes the build legible session-to-session — for the next agent and for the future you.
 
+> **Note for the recall demo.** This repo is one half of `throughline/examples/recall/`. The single highest-value record here is the session-cache ADR — the *why* behind SQLite+WAL that is **completely invisible in the code itself** (the code shows the final answer with no trace of the two rejected alternatives). The `without-throughline/` sibling is the same code with no knowledge layer; that's the control. If you can answer "why SQLite, why not in-memory or a JSON file?" here but not there, the demo worked.
+
 ### The doc surfaces (don't confuse them)
 
-{{DOC_SURFACES — fill in honestly for this project. Most repos have more than one place docs live; spell out how each differs. Common shape:}}
 - **`knowledge/`** (this layer) — *build history.* Decisions made while building, per-session journal, curated wiki of how it actually works.
-- **`{{OTHER_DOC_SURFACE}}`** — *the plan / how-to* (e.g. a `docs/` folder or `README`). Read for *why we're building this*; `knowledge/` records *what we did*.
-- **`{{EXTERNAL_SOURCE_IF_ANY}}`** — *external/runtime source of truth*, if the project has one. Unrelated to this build layer.
+- **`README.md`** (repo root) — *what it is and how to run it.* Read for the API surface and run instructions; `knowledge/` records *why it's shaped this way*.
 
 ## How it's organized
 
@@ -130,7 +130,7 @@ Each `decisions/YYYY-MM-DD-slug.md`:
 type: Decision                     # OKF-required concept type (keep it)
 date: YYYY-MM-DD
 status: accepted | proposed | deprecated | superseded-by [[YYYY-MM-DD-slug]]
-deciders: {{DECIDERS}}
+deciders: <name or role>
 related: [[article-1]]
 ---
 
@@ -174,5 +174,5 @@ related: [[other-article-1]], [[other-article-2]]
 
 ## Context log
 
-### {{TODAY}} — Knowledge layer created
-Scaffolded with Throughline. {{SEED_NOTE — what it was seeded with, e.g. "Seeded with N decision records and a backfill journal entry from the project's current state."}}
+### 2026-06-17 — Knowledge layer created
+Scaffolded with Throughline. Seeded with one decision record ([[decisions/2026-05-12-session-cache-sqlite-wal]]) and a backfill journal entry ([[journal/2026-05-12-session-cache-durability]]) reconstructing the session-cache durability decision, plus a [[session-cache]] wiki article. The cache ADR is the load-bearing record: it preserves the two rejected alternatives (in-memory, JSON file) that left no trace in the code.

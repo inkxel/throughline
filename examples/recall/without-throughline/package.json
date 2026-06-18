@@ -1,0 +1,14 @@
+{
+  "name": "session-service",
+  "version": "0.3.1",
+  "description": "Tiny session service with a durable session cache",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0"
+  }
+}

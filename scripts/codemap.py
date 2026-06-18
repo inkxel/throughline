@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-knowledge-layer — code-map generator (codemap.py)
+Throughline — code-map generator (codemap.py)
 
 Deterministic, local, NO LLM. Uses tree-sitter via tree-sitter-language-pack
 to extract top-level symbols and imports from source files, then emits:

@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# knowledge-layer — journal breadcrumb hook (plain git `post-commit`).
+#
+# Fires after every successful commit. If the commit actually ADVANCED HEAD,
+# append a crash-proof breadcrumb (time, short hash, subject, changed files) to
+# today's journal entry, then print a reminder to write the WHY while it's
+# fresh. The commit is the "larger move" marker. HEAD-comparison means
+# amend/no-op reruns never double-write, and a blocked/failed commit never
+# reaches this hook at all (git only runs post-commit on success).
+#
+# Tool-agnostic: works with plain git, Cursor, Codex, or any tool that commits.
+# Any non-fatal problem just exits 0 silently — journaling must never block work.
+
+set -uo pipefail
+
+# Resolve the repo root ourselves — post-commit runs with CWD at the repo top
+# already, but be explicit so subdir/worktree invocations behave.
+root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$root" 2>/dev/null || exit 0
+[ -d knowledge/journal ] || exit 0          # only act where a knowledge layer exists
+
+head=$(git rev-parse --short HEAD 2>/dev/null) || exit 0
+state="knowledge/journal/.last-breadcrumb"
+[ "$head" = "$(cat "$state" 2>/dev/null || true)" ] && exit 0   # HEAD didn't advance — skip
+
+date=$(date +%F)
+time=$(date +%H:%M)
+subject=$(git log -1 --pretty=%s 2>/dev/null)
+# Clean ", "-joined file list, capped so big commits don't bloat the breadcrumb.
+files=$(git show --pretty=format: --name-only HEAD 2>/dev/null | sed '/^$/d' \
+  | awk 'NR<=12{printf "%s%s", (NR>1?", ":""), $0} END{if (NR>12) printf ", +%d more", NR-12}')
+
+# Append into today's journal entry: the newest knowledge/journal/<today>*.md,
+# or create a dated default if a session entry hasn't been started yet.
+journal=$(ls -t knowledge/journal/${date}*.md 2>/dev/null | head -1)
+if [ -z "$journal" ]; then
+  journal="knowledge/journal/${date}-session.md"
+  {
+    printf -- '---\n'
+    printf 'date: %s\n' "$date"
+    printf 'session: session\n'
+    printf 'status: in-progress\n'
+    printf -- '---\n\n'
+    printf '# Session — %s\n\n' "$date"
+    printf '> Auto-breadcrumbs from commits below. Flesh out the **why** under each while fresh.\n'
+  } > "$journal"
+fi
+
+printf '\n### %s — %s\n%s\nfiles: %s\n' "$time" "$head" "$subject" "${files:-—}" >> "$journal"
+printf '%s' "$head" > "$state"
+
+# Plain-git equivalent of the Claude-Code additionalContext nudge: a printed
+# reminder on stderr so it surfaces in the terminal without polluting stdout.
+# (No agent to inject context into outside Claude Code, so this is best-effort.)
+#
+# NOTE ON THE ONE-COMMIT LAG: the breadcrumb file above is an uncommitted
+# working-tree change. It will be picked up by the NEXT commit — this is
+# intentional. We deliberately do NOT run `git commit --amend` here because
+# amending rewrites the commit SHA, which breaks signed commits and anything
+# already pushed. See docs/git-hook.md § "How the journal and git interact".
+printf '\n📓 breadcrumb written to %s — it'\''ll be committed with your next change. Add the WHY now while it'\''s fresh.\n   (%s · %s)\n\n' \
+  "$journal" "$head" "$subject" >&2
+
+exit 0

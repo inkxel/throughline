@@ -2,7 +2,7 @@
 """
 okf-export — emit an OKF-conformant Knowledge Bundle from a knowledge/ layer.
 
-Authoring stays in the knowledge-layer convention ([[wikilinks]], rich
+Authoring stays in the Throughline convention ([[wikilinks]], rich
 frontmatter). This produces a clean copy that conforms to Google's Open
 Knowledge Format (OKF) v0.1 — every concept has a non-empty `type`, links are
 bundle-relative markdown, and index.md / log.md are generated.
@@ -72,7 +72,7 @@ def _split_inline_list(v):
 
     Commas inside `[[wikilinks]]` must not split items, so we track bracket
     depth. Handles the real-world `related: [[a]], [[b]]` shape (which is not
-    valid YAML flow but is what the knowledge-layer convention emits) as well
+    valid YAML flow but is what the Throughline convention emits) as well
     as a genuine `tags: [a, b]` inline list.
     """
     s = v.strip()
@@ -104,7 +104,7 @@ def fm_parse(fm):
       - `key: [a, b]`                      inline flow sequence
       - `key: [[a]], [[b]]`                wikilink-comma list (convention)
       - `key:` followed by `- item` lines  block sequence
-    Only top-level keys are read (knowledge-layer frontmatter is flat). Unknown
+    Only top-level keys are read (Throughline frontmatter is flat). Unknown
     structures degrade to a scalar string, never an exception — robustness over
     completeness, matching OKF's permissive-consumption stance.
     """
@@ -255,7 +255,7 @@ def main():
 
     # basename (no .md) -> list of bundle-relative paths, for wikilink resolution.
     # OKF §2: concept ID is the file path minus `.md`. Bare-name [[wikilinks]]
-    # are a knowledge-layer convenience, not an OKF concept; when a basename is
+    # are a Throughline convenience, not an OKF concept; when a basename is
     # unique we resolve it, when it collides across partitions we warn loudly so
     # links are never *silently* misresolved to the wrong concept.
     by_base = {}

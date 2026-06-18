@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# knowledge-layer — scaffold the mechanical structure into a target repo.
+# Throughline — scaffold the mechanical structure into a target repo.
 # Idempotent and merge-aware: safe to re-run; never clobbles an existing
 # knowledge/ or overwrites an existing .claude/settings.json (merges the hook).
 #
@@ -129,7 +129,7 @@ fi
 # --- gitignore the hook's local state ----------------------------------------
 ignore=".gitignore"
 if ! { [ -f "$ignore" ] && grep -q 'knowledge/journal/.last-breadcrumb' "$ignore"; }; then
-  printf '\n# knowledge-layer breadcrumb hook state\nknowledge/journal/.last-breadcrumb\n' >> "$ignore"
+  printf '\n# Throughline breadcrumb hook state\nknowledge/journal/.last-breadcrumb\n' >> "$ignore"
   echo "✓ gitignored knowledge/journal/.last-breadcrumb"
 fi
 
@@ -142,7 +142,7 @@ git config merge.union.driver "true" 2>/dev/null || true
 attrs=".gitattributes"
 if ! { [ -f "$attrs" ] && grep -q 'knowledge/wiki/_codemap.md' "$attrs"; }; then
   {
-    printf '\n# knowledge-layer generated files — union merge to avoid conflicts\n'
+    printf '\n# Throughline generated files — union merge to avoid conflicts\n'
     printf 'knowledge/wiki/_codemap.md merge=union\n'
     printf 'knowledge/_codemap.json merge=union\n'
   } >> "$attrs"
@@ -154,7 +154,7 @@ fi
 # the project may opt out; ensure at minimum the .last-codemap state is ignored.
 # (Projects may commit the codemap itself — it diffs cleanly; up to the project.)
 if ! { [ -f "$ignore" ] && grep -q 'knowledge/journal/.last-codemap' "$ignore"; }; then
-  printf '# knowledge-layer codemap hook state\nknowledge/journal/.last-codemap\n' >> "$ignore"
+  printf '# Throughline codemap hook state\nknowledge/journal/.last-codemap\n' >> "$ignore"
   echo "✓ gitignored knowledge/journal/.last-codemap"
 fi
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# knowledge-layer — install the plain-git post-commit breadcrumb hook.
+# Throughline — install the plain-git post-commit breadcrumb hook.
 #
 # Wires the tool-agnostic `post-commit` hook into a target repo via
 # `core.hooksPath` so it fires after every successful commit — no Claude Code
@@ -46,14 +46,14 @@ echo "✓ .githooks/post-commit  (core.hooksPath → .githooks)"
 # --- gitignore the hook's local state ----------------------------------------
 ignore=".gitignore"
 if ! { [ -f "$ignore" ] && grep -q 'knowledge/journal/.last-breadcrumb' "$ignore"; }; then
-  printf '\n# knowledge-layer breadcrumb hook state\nknowledge/journal/.last-breadcrumb\n' >> "$ignore"
+  printf '\n# Throughline breadcrumb hook state\nknowledge/journal/.last-breadcrumb\n' >> "$ignore"
   echo "✓ gitignored knowledge/journal/.last-breadcrumb"
 fi
 
 # --- ensure the journal dir exists (hook no-ops without it) -------------------
 if [ ! -d knowledge/journal ]; then
   echo "• note: knowledge/journal/ does not exist yet — the hook stays inert"
-  echo "        until it does (that dir is what marks a repo knowledge-layer-enabled)."
+  echo "        until it does (that dir is what marks a repo Throughline-enabled)."
   echo "        Run init.sh, or \`mkdir -p knowledge/journal\`, to activate it."
 fi
 

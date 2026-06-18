@@ -57,7 +57,7 @@ If you'd rather keep the journal entirely local and out of version control, add 
   committed successfully, and the hook exits 0 on any non-fatal problem. A
   blocked or failed commit never reaches it.
 - **Inert until opted in.** The hook no-ops unless `knowledge/journal/` exists —
-  that directory is what marks a repo as "knowledge-layer enabled."
+  that directory is what marks a repo as "Throughline-enabled."
 
 ## Install
 

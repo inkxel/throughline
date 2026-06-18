@@ -1,6 +1,6 @@
 # Knowledge Layer — skill notes
 
-> Design notes and operating procedure for the knowledge-layer scaffolder. This is
+> Design notes and operating procedure for the Throughline scaffolder. This is
 > the *how it works / how to run it* doc, not the project README (which lives at the
 > repo root). Use this whenever you want to set up the knowledge layer on a project —
 > add ADRs / decision records / a project wiki / session-handoff continuity, or

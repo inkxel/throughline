@@ -1,6 +1,6 @@
 # OKF compatibility — the knowledge layer as an Open Knowledge Format bundle
 
-> Maps this knowledge-layer convention to **Google's Open Knowledge Format (OKF) v0.1** (Apache-2.0, [GoogleCloudPlatform/knowledge-catalog](https://github.com/GoogleCloudPlatform/knowledge-catalog), spec: `okf/SPEC.md`). OKF formalizes the same Karpathy "LLM wiki" pattern this layer is built on — so we're ~90% conformant already, and the gap is the easy part. The *hard* part — the maintained-wiki machinery — is what this layer has and OKF only describes.
+> Maps the Throughline convention to **Google's Open Knowledge Format (OKF) v0.1** (Apache-2.0, [GoogleCloudPlatform/knowledge-catalog](https://github.com/GoogleCloudPlatform/knowledge-catalog), spec: `okf/SPEC.md`). OKF formalizes the same Karpathy "LLM wiki" pattern this layer is built on — so we're ~90% conformant already, and the gap is the easy part. The *hard* part — the maintained-wiki machinery — is what this layer has and OKF only describes.
 
 ## Why this matters
 OKF standardizes the **file format** for agent-readable knowledge. It explicitly does **not** provide the *enrichment + maintenance* system — the agent that reads a new source, integrates it, updates entity pages, and **flags contradictions**. This knowledge layer *is* that system (the journal→wiki compile pass, contradiction preservation, `confidence`/`last_compiled`, search-before-answer). So the positioning is: **"the OKF-native knowledge layer with the maintained wiki built in."** The format is the commodity; the maintenance discipline is the moat.

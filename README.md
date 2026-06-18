@@ -50,47 +50,68 @@ The whole discipline fits on a napkin. The scaffold enforces the structure — y
 2. **A decision worth arguing about gets an ADR.** If you'd be annoyed to re-explain it in a month, it's a decision record. Context, the call, the consequences. One file.
 3. **The wiki is derived, never authoritative.** Journal and decisions are the source of truth. The wiki is the compiled, cleaned-up view. When they disagree, the raw source wins — and you preserve the contradiction instead of silently smoothing it over.
 
-## Worked example
+## Worked example — recall actually working
 
-Scaffold it, make a commit, watch the breadcrumb appear.
+The point isn't the folder. The point is that an agent can later recover a *why*
+it otherwise has no way to know. So here's that, as a controlled before/after.
 
-```bash
-$ cd ~/Code/my-thing
-$ throughline init
-→ scaffolding knowledge layer into: /Users/you/Code/my-thing
-✓ knowledge/{wiki,journal,decisions,research} + roadmap
-✓ git post-commit hook installed (core.hooksPath → .githooks)
-✓ AGENTS.md + CLAUDE.md pointer
-```
+Same small service, two copies. Same `src/`, byte-for-byte. One copy carries a
+Throughline `knowledge/` layer; the other doesn't. The session cache runs on
+SQLite in WAL mode, and the code says *that* — `journal_mode = WAL` — and nothing
+about *why*. Then ask both copies the obvious review question:
 
-Now do what you'd do anyway:
+> *"Why does this use SQLite with WAL for the session cache instead of just
+> keeping it in memory?"*
+
+**Without the layer**, the agent reads every file, searches for any trace of the
+reasoning, and answers honestly: it can't find one.
+
+> I cannot determine the reasoning from the code itself. There's no comment, no
+> ADR, no commit history that says why SQLite-with-WAL over an in-memory cache —
+> the only hit is the bare `pragma` line. So I will not invent one.
+
+Right call — it refused to make something up. But the answer the reviewer needed
+left with the session that made the decision.
+
+**With the layer**, same code, same question. The agent confirms the pragmas, then
+reads the reasoning out of `knowledge/` and cites where it came from.
+
+> Durability across restarts, without standing up a separate service. The
+> in-memory `Map` was the original design — rejected because `node --watch` wiped
+> every session on each save ("change a line, lose all your sessions"). A JSON file
+> was tried first and abandoned — it corrupted under concurrent writes. SQLite +
+> WAL gave durability for free, no extra service. *(Source:
+> `knowledge/decisions/2026-05-12-session-cache-sqlite-wal.md`, the journal, and
+> the wiki.)*
+
+Identical bytes of code. One side reconstructs the two dead ends — the `Map`, the
+JSON file that corrupted — so nobody re-litigates them. The other side can't, so
+someone "simplifies" it back to a JSON file in six months and walks into the same
+corruption bug. That recovered paragraph is the thing you can never reconstruct
+from the code, and it's exactly what evaporates when a session closes.
+
+The full demo — both real blind-test answers verbatim, plus a `grep` that proves
+the *why* genuinely isn't in the code — lives in
+[`examples/recall/`](examples/recall/). Run it against your own agent.
+
+### How the *why* got there
+
+It's captured at the commit, not dredged up later. Do what you'd do anyway:
 
 ```bash
 $ git add -A && git commit -m "swap the in-memory cache for SQLite"
 ```
 
-The hook fires on a HEAD advance and `knowledge/journal/2026-06-17-session.md` gets a fresh breadcrumb:
+The hook fires on a HEAD advance and drops a breadcrumb into today's journal, then
+nudges the agent:
 
-```markdown
-### 14:22 — a1b9f3c
-swap the in-memory cache for SQLite
-files: src/cache.ts, src/db.ts, package.json
-```
+> 📓 Committed a1b9f3c (swap the in-memory cache for SQLite). A breadcrumb was
+> auto-appended. Add the WHY now while it's fresh — rationale, what was
+> tried/abandoned, open threads — don't defer to session end.
 
-And the agent gets the nudge:
-
-> 📓 Committed a1b9f3c (swap the in-memory cache for SQLite). A breadcrumb was auto-appended to knowledge/journal/2026-06-17-session.md. Add the WHY now while it's fresh — rationale, what was tried/abandoned, open threads — don't defer to session end.
-
-So the agent fills it in, right there:
-
-```markdown
-Why: in-memory cache lost everything on restart, which made the dev loop
-miserable. Tried a JSON-file cache first — concurrent writes corrupted it.
-SQLite gives us durability + WAL for free. Open thread: eviction policy
-still naive, revisit if the working set grows.
-```
-
-That paragraph is the thing you can never reconstruct later. Now it lives next to the commit that made it true. Failed commits — a pre-commit hook reject, a blocked push — never breadcrumb, because the hook only fires when HEAD actually moves. No noise.
+So the agent fills it in right there, while the context is still warm — which is
+the only moment that paragraph is cheap to write. Failed commits never breadcrumb;
+the hook only fires when HEAD actually moves. No noise.
 
 ## The OKF-native angle
 

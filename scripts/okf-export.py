@@ -241,6 +241,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("kdir", help="path to the knowledge/ directory")
     ap.add_argument("-o", "--out", default=None, help="output bundle dir (default: ./okf)")
+    ap.add_argument("--preserve", action="store_true",
+                    help="lossless mode: also emit the OKF concept `id` and keep every "
+                         "source frontmatter key verbatim. OKF tolerates unknown keys "
+                         "(§4.1), so the bundle stays OKF-valid while carrying the full "
+                         "authoring spine (id + provenance + per-type fields) that other "
+                         "knowledge systems need.")
     args = ap.parse_args()
     kdir = os.path.abspath(args.kdir)
     out = os.path.abspath(args.out or os.path.join(os.getcwd(), "okf"))
@@ -318,6 +324,28 @@ def main():
         conf = fm_get(fm, "confidence")
         if conf:
             new_fm.append(f"confidence: {yq(conf)}")   # extension key — our maintenance signal
+
+        if args.preserve:
+            # Lossless: emit the OKF concept id (§2: path minus `.md`) + guarantee a
+            # `sources` field, then pass through every remaining source key verbatim.
+            # Additive — OKF tolerates unknown keys (§4.1) — so OKF conformance holds
+            # while the bundle keeps the full authoring spine (provenance, per-type).
+            cid = c["rel"].replace(os.sep, "/")[:-3]
+            new_fm.append(f"id: {yq(cid)}")
+            if not fm_list(fm, "sources"):
+                new_fm.append("sources: []")            # presence guaranteed (may be empty)
+            done = {"type", "title", "description", "timestamp", "confidence", "id"} | set(LIST_KEYS)
+            for k, v in fm.items():
+                if k in done:
+                    continue
+                if isinstance(v, list):
+                    if v:
+                        new_fm.append(f"{k}:")
+                        new_fm.extend(f"- {yq(x)}" for x in v)
+                    else:
+                        new_fm.append(f"{k}: []")
+                elif isinstance(v, str) and v.strip():
+                    new_fm.append(f"{k}: {yq(v)}")
 
         # convert wikilinks in the body -> bundle-relative markdown links (§5.1)
         nbody = WIKILINK.sub(lambda m: f"[{(m.group(2) or m.group(1)).strip()}]({resolve(m.group(1))})", body)

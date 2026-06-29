@@ -30,6 +30,36 @@ WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 # frontmatter keys we re-emit as YAML block sequences (multi-value)
 LIST_KEYS = ("tags", "sources", "related", "aliases")
 
+# --- OKF reliability object (--reliability) -----------------------------------
+# Honest mapping of Throughline's authored-corpus signals onto the proposed
+# reliability schema (github.com/.../okf-reliability-v1.json, #151/#159). NO
+# shortcuts: we emit only what we can stand behind. `confidence` band casing is
+# a pure rename. `basis` is a CLOSED enum with no value for "a human curated
+# this" — so we emit it ONLY when the source states an honest enum value, and
+# leave it absent otherwise (which fails the schema floor by design — that gap
+# is the finding, not something to paper over by mislabeling authored claims as
+# `inferred`).
+RELIABILITY_BAND = {"high": "HIGH", "medium": "MEDIUM", "low": "LOW",
+                    "speculative": "UNVERIFIED", "unverified": "UNVERIFIED"}
+BASIS_ENUM = {"live-source", "partner-attested", "vendor-doc", "forecast",
+              "computed", "inferred"}
+
+def build_reliability(fm, ts):
+    """Return YAML lines for a `reliability:` block, or [] if no confidence.
+    Honest: band cased, assessed_at from last-touch, basis only if stated+valid."""
+    raw = (fm_get(fm, "confidence") or "").strip().lower()
+    if not raw:
+        return []
+    band = RELIABILITY_BAND.get(raw, "UNVERIFIED")  # unknown band -> conservative
+    lines = ["reliability:", f"  confidence: {band}"]
+    basis = (fm_get(fm, "basis") or "").strip().lower()
+    if basis in BASIS_ENUM:
+        lines.append(f"  basis: {basis}")          # emit only an honest enum value
+    # else: no honest basis for human-authored content -> omit (floor will fail)
+    if ts:
+        lines.append(f"  assessed_at: {yq(ts)}")
+    return lines
+
 
 # --------------------------------------------------------------------------- #
 # Frontmatter parsing
@@ -247,6 +277,11 @@ def main():
                          "(§4.1), so the bundle stays OKF-valid while carrying the full "
                          "authoring spine (id + provenance + per-type fields) that other "
                          "knowledge systems need.")
+    ap.add_argument("--reliability", action="store_true",
+                    help="also emit a nested `reliability:` object (proposed OKF "
+                         "reliability convention, #151/#159) + cross-concept "
+                         "`supersedes`/`contradicts` typed links (#158/#148), built "
+                         "honestly from the source's confidence/basis/edge keys.")
     args = ap.parse_args()
     kdir = os.path.abspath(args.kdir)
     out = os.path.abspath(args.out or os.path.join(os.getcwd(), "okf"))
@@ -324,6 +359,22 @@ def main():
         conf = fm_get(fm, "confidence")
         if conf:
             new_fm.append(f"confidence: {yq(conf)}")   # extension key — our maintenance signal
+
+        if args.reliability:
+            # nested reliability object (#151/#159), honest mapping
+            new_fm.extend(build_reliability(fm, ts))
+            # cross-concept typed links (#158/#148): relationship is the KEY,
+            # values are resolved concept ids. These live on the concept, NOT
+            # inside the reliability object (per the schema's own $comment).
+            for rel_kind in ("supersedes", "contradicts"):
+                tlist = []
+                for t in fm_list(fm, rel_kind):
+                    name = WIKILINK.sub(lambda m: (m.group(2) or m.group(1)).strip(), t).strip()
+                    if name:
+                        tlist.append(resolve(name))
+                if tlist:
+                    new_fm.append(f"{rel_kind}:")
+                    new_fm.extend(f"- {yq(p)}" for p in tlist)
 
         if args.preserve:
             # Lossless: emit the OKF concept id (§2: path minus `.md`) + guarantee a

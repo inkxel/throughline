@@ -34,15 +34,17 @@ LIST_KEYS = ("tags", "sources", "related", "aliases")
 # Honest mapping of Throughline's authored-corpus signals onto the proposed
 # reliability schema (github.com/.../okf-reliability-v1.json, #151/#159). NO
 # shortcuts: we emit only what we can stand behind. `confidence` band casing is
-# a pure rename. `basis` is a CLOSED enum with no value for "a human curated
-# this" — so we emit it ONLY when the source states an honest enum value, and
-# leave it absent otherwise (which fails the schema floor by design — that gap
-# is the finding, not something to paper over by mislabeling authored claims as
-# `inferred`).
+# a pure rename. `basis` is a CLOSED enum, ordered most to least authoritative
+# when sources disagree: live-source > authored > partner-attested > vendor-doc
+# > forecast > computed > inferred (`authored` landed 2026-07-11 per #159 —
+# github.com/GoogleCloudPlatform/knowledge-catalog/pull/159#issuecomment-4945882118
+# — for a first-party claim a person observed, decided, or wrote down directly;
+# before this it had no honest slot and was correctly left absent rather than
+# mislabeled `inferred`).
 RELIABILITY_BAND = {"high": "HIGH", "medium": "MEDIUM", "low": "LOW",
                     "speculative": "UNVERIFIED", "unverified": "UNVERIFIED"}
-BASIS_ENUM = {"live-source", "partner-attested", "vendor-doc", "forecast",
-              "computed", "inferred"}
+BASIS_ENUM = {"live-source", "authored", "partner-attested", "vendor-doc",
+              "forecast", "computed", "inferred"}
 
 def build_reliability(fm, ts):
     """Return YAML lines for a `reliability:` block, or [] if no confidence.

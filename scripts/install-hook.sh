@@ -43,21 +43,31 @@ chmod +x .githooks/post-commit
 git config core.hooksPath .githooks
 echo "✓ .githooks/post-commit  (core.hooksPath → .githooks)"
 
+# --- which temporal-record folder this repo uses (journal/ person, ledger/
+# org/brand/project — dotKnowledge SPEC.md §3) -- detect by presence, same as
+# the hook itself does at runtime; default to journal/ if neither exists yet
+# (matches init.sh's own default when --type is omitted).
+if [ -d knowledge/ledger ]; then
+  tdir="ledger"
+else
+  tdir="journal"
+fi
+
 # --- gitignore the hook's local state ----------------------------------------
 ignore=".gitignore"
-if ! { [ -f "$ignore" ] && grep -q 'knowledge/journal/.last-breadcrumb' "$ignore"; }; then
-  printf '\n# Throughline breadcrumb hook state\nknowledge/journal/.last-breadcrumb\n' >> "$ignore"
-  echo "✓ gitignored knowledge/journal/.last-breadcrumb"
+if ! { [ -f "$ignore" ] && grep -q "knowledge/$tdir/.last-breadcrumb" "$ignore"; }; then
+  printf '\n# Throughline breadcrumb hook state\nknowledge/%s/.last-breadcrumb\n' "$tdir" >> "$ignore"
+  echo "✓ gitignored knowledge/$tdir/.last-breadcrumb"
 fi
 
-# --- ensure the journal dir exists (hook no-ops without it) -------------------
-if [ ! -d knowledge/journal ]; then
-  echo "• note: knowledge/journal/ does not exist yet — the hook stays inert"
+# --- ensure the temporal-record dir exists (hook no-ops without it) ----------
+if [ ! -d "knowledge/$tdir" ]; then
+  echo "• note: knowledge/$tdir/ does not exist yet — the hook stays inert"
   echo "        until it does (that dir is what marks a repo Throughline-enabled)."
-  echo "        Run init.sh, or \`mkdir -p knowledge/journal\`, to activate it."
+  echo "        Run init.sh, or \`mkdir -p knowledge/$tdir\`, to activate it."
 fi
 
-cat <<'EOF'
+cat <<EOF
 
 Done. The hook fires after every successful commit (plain git — no Claude Code needed).
 
@@ -69,7 +79,7 @@ the repo's setup/bootstrap (package.json "prepare", a Makefile target, or README
 (core.hooksPath is NOT auto-applied on clone for safety, so it must be set once
 per machine/clone.)
 
-Verify: make a trivial commit and confirm a `### HH:MM — <hash>` block was
-appended to today's knowledge/journal/<date>*.md. Re-running the hook manually
-(`.githooks/post-commit`) WITHOUT a new commit must NOT append a second time.
+Verify: make a trivial commit and confirm a \`### HH:MM — <hash>\` block was
+appended to today's knowledge/$tdir/<date>*.md. Re-running the hook manually
+(\`.githooks/post-commit\`) WITHOUT a new commit must NOT append a second time.
 EOF

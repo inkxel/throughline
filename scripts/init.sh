@@ -11,9 +11,19 @@
 # it in. Use it only when the project is driven through Claude Code and you want
 # the in-agent additionalContext nudge on top of the printed terminal reminder.
 #
+# --type controls the bundle's temporal-record shape (dotKnowledge SPEC.md §3):
+# a `person` subject gets journal/ (first-person, human voice); org/brand/project
+# get ledger/ instead (agent-authored activity log — a person's the only subject
+# with a first-person voice to journal). Omit --type to keep the original,
+# unconditional journal/ behavior (default, backward-compatible for existing
+# installs — this flag is additive, it never changes a repo that's already
+# scaffolded).
+#
 # Usage:
-#   init.sh [repo-path]                 # default: plain-git post-commit hook
-#   init.sh [repo-path] --claude-code   # also wire the Claude Code PostToolUse hook
+#   init.sh [repo-path]                          # default: plain-git post-commit hook, journal/
+#   init.sh [repo-path] --type person             # explicit person bundle — journal/ (same as default)
+#   init.sh [repo-path] --type org|brand|project   # canonical bundle — ledger/ instead of journal/
+#   init.sh [repo-path] --claude-code              # also wire the Claude Code PostToolUse hook
 #
 # (--repo-path may also be given positionally; the flag order is free.)
 
@@ -22,19 +32,29 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ASSETS="$(dirname "$SCRIPT_DIR")/assets"
 
-# --- parse args (free order: one optional repo-path + optional --claude-code) -
+# --- parse args (free order: one optional repo-path + optional flags) --------
 target=""
 WITH_CLAUDE_CODE=0
+SUBJECT_TYPE=""
+prev=""
 for arg in "$@"; do
+  case "$prev" in
+    --type) SUBJECT_TYPE="$arg"; prev=""; continue ;;
+  esac
   case "$arg" in
     --claude-code) WITH_CLAUDE_CODE=1 ;;
+    --type) prev="--type" ;;
     -h|--help)
-      sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     -*) echo "✗ unknown flag: $arg" >&2; exit 1 ;;
     *)  target="$arg" ;;
   esac
 done
+case "$SUBJECT_TYPE" in
+  ""|person|org|brand|project) ;;
+  *) echo "✗ --type must be one of: person, org, brand, project (got: $SUBJECT_TYPE)" >&2; exit 1 ;;
+esac
 
 # --- locate the target repo ---------------------------------------------------
 if [ -z "$target" ]; then
@@ -44,8 +64,15 @@ cd "$target" || { echo "✗ cannot cd into $target" >&2; exit 1; }
 echo "→ scaffolding knowledge layer into: $target"
 
 # --- directories --------------------------------------------------------------
-mkdir -p knowledge/wiki knowledge/journal knowledge/decisions knowledge/research
-echo "✓ knowledge/{wiki,journal,decisions,research}"
+# sources/ is universal (raw intake, any subject type, SPEC.md §3).
+mkdir -p knowledge/wiki knowledge/decisions knowledge/research knowledge/sources
+if [ "$SUBJECT_TYPE" = "org" ] || [ "$SUBJECT_TYPE" = "brand" ] || [ "$SUBJECT_TYPE" = "project" ]; then
+  TEMPORAL_DIR="ledger"
+else
+  TEMPORAL_DIR="journal"   # default (no --type) or --type person
+fi
+mkdir -p "knowledge/$TEMPORAL_DIR"
+echo "✓ knowledge/{wiki,decisions,research,sources,$TEMPORAL_DIR}"
 
 # --- roadmap stub (parking-lot for deferred ideas) ---------------------------
 if [ -f knowledge/wiki/roadmap.md ]; then
@@ -128,9 +155,9 @@ fi
 
 # --- gitignore the hook's local state ----------------------------------------
 ignore=".gitignore"
-if ! { [ -f "$ignore" ] && grep -q 'knowledge/journal/.last-breadcrumb' "$ignore"; }; then
-  printf '\n# Throughline breadcrumb hook state\nknowledge/journal/.last-breadcrumb\n' >> "$ignore"
-  echo "✓ gitignored knowledge/journal/.last-breadcrumb"
+if ! { [ -f "$ignore" ] && grep -q "knowledge/$TEMPORAL_DIR/.last-breadcrumb" "$ignore"; }; then
+  printf '\n# Throughline breadcrumb hook state\nknowledge/%s/.last-breadcrumb\n' "$TEMPORAL_DIR" >> "$ignore"
+  echo "✓ gitignored knowledge/$TEMPORAL_DIR/.last-breadcrumb"
 fi
 
 # --- union merge-driver for generated codemap files --------------------------
@@ -153,9 +180,9 @@ fi
 # They are always regeneratable so we commit them if the project wants, but
 # the project may opt out; ensure at minimum the .last-codemap state is ignored.
 # (Projects may commit the codemap itself — it diffs cleanly; up to the project.)
-if ! { [ -f "$ignore" ] && grep -q 'knowledge/journal/.last-codemap' "$ignore"; }; then
-  printf '# Throughline codemap hook state\nknowledge/journal/.last-codemap\n' >> "$ignore"
-  echo "✓ gitignored knowledge/journal/.last-codemap"
+if ! { [ -f "$ignore" ] && grep -q "knowledge/$TEMPORAL_DIR/.last-codemap" "$ignore"; }; then
+  printf '# Throughline codemap hook state\nknowledge/%s/.last-codemap\n' "$TEMPORAL_DIR" >> "$ignore"
+  echo "✓ gitignored knowledge/$TEMPORAL_DIR/.last-codemap"
 fi
 
 # --- template knowledge/AGENTS.md (canonical) + knowledge/CLAUDE.md (pointer) --
@@ -177,7 +204,7 @@ else
   echo "✓ knowledge/CLAUDE.md (POINTER → AGENTS.md — set {{PROJECT_NAME}})"
 fi
 
-cat <<'EOF'
+cat <<EOF
 
 Mechanical scaffold complete. Next (the agent does these):
   1. Fill the {{PLACEHOLDERS}} in knowledge/AGENTS.md with real project context
@@ -186,15 +213,15 @@ Mechanical scaffold complete. Next (the agent does these):
   2. Write the repo-root README.md from references/readme-template.md (the
      standard structure). READMEs are WHAT/WHY/DIRECTION only — never research,
      findings, evaluations, or meeting origins. Research goes in knowledge/research/.
-  3. Seed decisions/ + a backfill journal entry from the project's current state.
+  3. Seed decisions/ + a backfill knowledge/$TEMPORAL_DIR/ entry from the project's current state.
   4. Point the repo-root docs at knowledge/AGENTS.md: write a repo-root AGENTS.md
      (canonical) + a thin repo-root CLAUDE.md pointer, and link them from README.
   5. Run the code-map generator to build the initial structural index:
-       uv run --with tree-sitter --with tree-sitter-language-pack \
+       uv run --with tree-sitter --with tree-sitter-language-pack \\
            python3 ~/.claude/skills/knowledge-layer/scripts/codemap.py [repo-root]
 
 The plain-git post-commit breadcrumb hook is ALREADY ACTIVE — make a commit and
-a `### HH:MM — <hash>` block lands in today's knowledge/journal/<date>*.md. No
+a \`### HH:MM — <hash>\` block lands in today's knowledge/$TEMPORAL_DIR/<date>*.md. No
 Claude Code, no /hooks, no restart needed.
 
 If you ALSO ran with --claude-code, the in-agent PostToolUse hooks won't fire

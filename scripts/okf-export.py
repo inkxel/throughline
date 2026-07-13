@@ -24,8 +24,12 @@ import sys, os, re, argparse
 from datetime import datetime, timezone
 
 RESERVED = {"index.md", "log.md", "_codemap.md", "CLAUDE.md", "AGENTS.md", "README.md", "roadmap.md"}
-# default concept `type` inferred from the top-level dir when frontmatter lacks one
-DIR_TYPE = {"journal": "Journal", "decisions": "Decision", "research": "Research", "wiki": "Reference"}
+# default concept `type` inferred from the top-level dir when frontmatter lacks one.
+# ledger/ + sources/ (dotKnowledge SPEC.md §3 — org/brand/project's agent-authored
+# activity log, and universal raw intake) are additive here, not Journal aliases:
+# a person subject gets journal/, everything else gets ledger/ instead (§2).
+DIR_TYPE = {"journal": "Journal", "ledger": "Ledger", "decisions": "Decision",
+            "research": "Research", "wiki": "Reference", "sources": "Source"}
 WIKILINK = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]")
 # frontmatter keys we re-emit as YAML block sequences (multi-value)
 LIST_KEYS = ("tags", "sources", "related", "aliases")
@@ -295,6 +299,15 @@ def main():
     # are a Throughline convenience, not an OKF concept; when a basename is
     # unique we resolve it, when it collides across partitions we warn loudly so
     # links are never *silently* misresolved to the wrong concept.
+    #
+    # KNOWN LIMIT, not a bug to patch here: because id == path, renaming a
+    # concept file breaks every [[wikilink]] pointing at its old name (it
+    # becomes a dangling link, §5.3-legal but real reference rot). A genuine
+    # fix needs a path-independent stable id, which is a live, cross-implementation
+    # OKF question, not a Throughline-local one — reported upstream with this
+    # exact finding: github.com/GoogleCloudPlatform/knowledge-catalog issue #120
+    # (comment 2026-07-08). Don't invent a parallel stable-id scheme here before
+    # that lands; it would just create a second incompatible convention.
     by_base = {}
     for c in concepts:
         base = os.path.splitext(os.path.basename(c["rel"]))[0]

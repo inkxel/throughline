@@ -15,14 +15,24 @@ set -uo pipefail
 
 root="${CLAUDE_PROJECT_DIR:-$PWD}"
 cd "$root" 2>/dev/null || exit 0
-[ -d knowledge/journal ] || exit 0          # only act where a knowledge layer exists
+
+# Which temporal-record folder this repo was scaffolded with (dotKnowledge SPEC.md
+# §3: journal/ for a person subject, ledger/ for org/brand/project) — the folder's
+# mere presence is the signal, no separate marker file needed.
+if [ -d knowledge/ledger ]; then
+  tdir="ledger"
+elif [ -d knowledge/journal ]; then
+  tdir="journal"
+else
+  exit 0   # no knowledge layer of either shape exists yet
+fi
 
 input=$(cat)
 cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // ""' 2>/dev/null)
 printf '%s' "$cmd" | grep -q 'git commit' || exit 0   # only git commit calls
 
 head=$(git rev-parse --short HEAD 2>/dev/null) || exit 0
-state="knowledge/journal/.last-breadcrumb"
+state="knowledge/$tdir/.last-breadcrumb"
 [ "$head" = "$(cat "$state" 2>/dev/null || true)" ] && exit 0   # no new commit — skip
 
 date=$(date +%F)
@@ -32,11 +42,11 @@ subject=$(git log -1 --pretty=%s 2>/dev/null)
 files=$(git show --pretty=format: --name-only HEAD 2>/dev/null | sed '/^$/d' \
   | awk 'NR<=12{printf "%s%s", (NR>1?", ":""), $0} END{if (NR>12) printf ", +%d more", NR-12}')
 
-# Append into today's journal entry: the newest knowledge/journal/<today>*.md,
-# or create a dated default if a session entry hasn't been started yet.
-journal=$(ls -t knowledge/journal/${date}*.md 2>/dev/null | head -1)
+# Append into today's entry: the newest knowledge/$tdir/<today>*.md, or create a
+# dated default if a session entry hasn't been started yet.
+journal=$(ls -t knowledge/$tdir/${date}*.md 2>/dev/null | head -1)
 if [ -z "$journal" ]; then
-  journal="knowledge/journal/${date}-session.md"
+  journal="knowledge/$tdir/${date}-session.md"
   {
     printf -- '---\n'
     printf 'date: %s\n' "$date"

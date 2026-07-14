@@ -19,10 +19,18 @@
 # installs — this flag is additive, it never changes a repo that's already
 # scaffolded).
 #
+# --with-stm adds stm/ (SPEC.md §3) — an optional, person-only, append-only,
+# epistemically-inert capture surface for pre-verbal material (sparks,
+# half-formed instincts) distinct from journal/'s dated first-person record.
+# Errors on org/brand/project — stm/ has no single owner in a multi-person
+# bundle. Opt-in and additive, same backward-compatibility discipline as --type:
+# omitting it never changes a repo that's already scaffolded.
+#
 # Usage:
 #   init.sh [repo-path]                          # default: plain-git post-commit hook, journal/
 #   init.sh [repo-path] --type person             # explicit person bundle — journal/ (same as default)
 #   init.sh [repo-path] --type org|brand|project   # canonical bundle — ledger/ instead of journal/
+#   init.sh [repo-path] --with-stm                 # also scaffold stm/ (person-only)
 #   init.sh [repo-path] --claude-code              # also wire the Claude Code PostToolUse hook
 #
 # (--repo-path may also be given positionally; the flag order is free.)
@@ -35,6 +43,7 @@ ASSETS="$(dirname "$SCRIPT_DIR")/assets"
 # --- parse args (free order: one optional repo-path + optional flags) --------
 target=""
 WITH_CLAUDE_CODE=0
+WITH_STM=0
 SUBJECT_TYPE=""
 prev=""
 for arg in "$@"; do
@@ -43,9 +52,10 @@ for arg in "$@"; do
   esac
   case "$arg" in
     --claude-code) WITH_CLAUDE_CODE=1 ;;
+    --with-stm) WITH_STM=1 ;;
     --type) prev="--type" ;;
     -h|--help)
-      sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
     -*) echo "✗ unknown flag: $arg" >&2; exit 1 ;;
     *)  target="$arg" ;;
@@ -55,6 +65,10 @@ case "$SUBJECT_TYPE" in
   ""|person|org|brand|project) ;;
   *) echo "✗ --type must be one of: person, org, brand, project (got: $SUBJECT_TYPE)" >&2; exit 1 ;;
 esac
+if [ "$WITH_STM" = "1" ] && { [ "$SUBJECT_TYPE" = "org" ] || [ "$SUBJECT_TYPE" = "brand" ] || [ "$SUBJECT_TYPE" = "project" ]; }; then
+  echo "✗ --with-stm is person-only (SPEC.md §3) — stm/ has no single owner in a multi-person $SUBJECT_TYPE bundle" >&2
+  exit 1
+fi
 
 # --- locate the target repo ---------------------------------------------------
 if [ -z "$target" ]; then
@@ -73,6 +87,11 @@ else
 fi
 mkdir -p "knowledge/$TEMPORAL_DIR"
 echo "✓ knowledge/{wiki,decisions,research,sources,$TEMPORAL_DIR}"
+
+if [ "$WITH_STM" = "1" ]; then
+  mkdir -p knowledge/stm
+  echo "✓ knowledge/stm (person-only, append-only, epistemically inert — SPEC.md §3; no schema beyond append-only-ness, never time-boxed)"
+fi
 
 # --- roadmap stub (parking-lot for deferred ideas) ---------------------------
 if [ -f knowledge/wiki/roadmap.md ]; then

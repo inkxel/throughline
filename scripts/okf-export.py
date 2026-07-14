@@ -256,10 +256,19 @@ def warn(msg):
 
 
 def collect(kdir):
-    """Walk for concept files. Return list of dicts with src path + rel path."""
+    """Walk for concept files. Return list of dicts with src path + rel path.
+
+    stm/ is excluded unconditionally, not just by omission from DIR_TYPE.
+    SPEC.md §3: stm/ is epistemically inert by construction and must never be
+    an OKF export target — a receiving system has no way to know its content
+    must never be believed, since that guarantee only exists inside this
+    bundle's own inertness contract. Excluding it here at the walk (rather
+    than relying on DIR_TYPE.get()'s fallback) means a future DIR_TYPE default
+    change can't silently start exporting it.
+    """
     concepts = []
     for root, dirs, files in os.walk(kdir):
-        dirs[:] = [d for d in dirs if not d.startswith(".") and not d.endswith("-log")]
+        dirs[:] = [d for d in dirs if not d.startswith(".") and not d.endswith("-log") and d != "stm"]
         for f in files:
             if not f.endswith(".md") or f in RESERVED or f.startswith("_"):
                 continue

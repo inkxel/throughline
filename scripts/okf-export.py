@@ -295,8 +295,10 @@ def main():
     ap.add_argument("--reliability", action="store_true",
                     help="also emit a nested `reliability:` object (proposed OKF "
                          "reliability convention, #151/#159) + cross-concept "
-                         "`supersedes`/`contradicts` typed links (#158/#148), built "
-                         "honestly from the source's confidence/basis/edge keys.")
+                         "`supersedes`/`contested_by` typed links (#158/#148; the "
+                         "legacy `contradicts:` key is still read and normalized to "
+                         "`contested_by`), built honestly from the source's "
+                         "confidence/basis/edge keys.")
     args = ap.parse_args()
     kdir = os.path.abspath(args.kdir)
     out = os.path.abspath(args.out or os.path.join(os.getcwd(), "okf"))
@@ -390,14 +392,22 @@ def main():
             # cross-concept typed links (#158/#148): relationship is the KEY,
             # values are resolved concept ids. These live on the concept, NOT
             # inside the reliability object (per the schema's own $comment).
-            for rel_kind in ("supersedes", "contradicts"):
-                tlist = []
-                for t in fm_list(fm, rel_kind):
-                    name = WIKILINK.sub(lambda m: (m.group(2) or m.group(1)).strip(), t).strip()
-                    if name:
-                        tlist.append(resolve(name))
+            # `contested_by` is the emitted name for the symmetric dispute edge
+            # (#158 converged on it); the legacy `contradicts:` key is still read
+            # and normalized to `contested_by` on write (back-compat).
+            for out_key, src_keys in (("supersedes", ("supersedes",)),
+                                      ("contested_by", ("contested_by", "contradicts"))):
+                tlist, seen = [], set()
+                for src in src_keys:
+                    for t in fm_list(fm, src):
+                        name = WIKILINK.sub(lambda m: (m.group(2) or m.group(1)).strip(), t).strip()
+                        if name:
+                            p = resolve(name)
+                            if p not in seen:
+                                seen.add(p)
+                                tlist.append(p)
                 if tlist:
-                    new_fm.append(f"{rel_kind}:")
+                    new_fm.append(f"{out_key}:")
                     new_fm.extend(f"- {yq(p)}" for p in tlist)
 
         if args.preserve:

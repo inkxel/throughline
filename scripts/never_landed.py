@@ -62,11 +62,22 @@ def slugify(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
-def known_targets(stores):
-    """Every slug a claim may legitimately resolve to. Includes declared
-    frontmatter aliases — a concept renamed with an alias is NOT a missing
-    write, and skipping this produces false positives on every rename."""
+def known_targets(stores, id_key="id"):
+    """Every identifier a claim may legitimately resolve to.
+
+    Three sources, and you need all three:
+      - filename stems
+      - declared frontmatter aliases — a renamed concept is NOT a missing
+        write, and skipping this false-positives on every rename
+      - a frontmatter stable-id key (default `id`)
+
+    That last one is not optional for cross-producer use. Producers whose
+    stable ids live in frontmatter while filenames are summary slugs resolve
+    nothing against stems alone — every claim reads as never-landed. Reported
+    by andrewcrenshaw against the remember/0.2 emitter, knowledge-catalog#207.
+    """
     known = set()
+    id_re = re.compile(rf"^{re.escape(id_key)}:\s*(.+?)\s*$", re.M)
     for root in stores:
         root = Path(root)
         if not root.is_dir():
@@ -74,6 +85,8 @@ def known_targets(stores):
         for p in root.rglob("*.md"):
             known.add(p.stem)
             head = p.read_text(errors="replace")[:2000]
+            for v in id_re.findall(head):
+                known.add(v.strip().strip("\"'"))
             blk = re.search(r"^aliases:\s*\n((?:\s*-\s*.+\n)+)", head, re.M)
             if blk:
                 known |= {slugify(v) for v in
@@ -86,26 +99,55 @@ def known_targets(stores):
     return known
 
 
-def check_log(log_path, stores, claim_re=CLAIM_RE):
+def check_log(log_path, stores, claim_re=CLAIM_RE, id_key="id"):
     """Every write the log claims, checked against the store. Always returns a
     denominator — 'found nothing' must never be indistinguishable from
     'looked nowhere', which is the failure mode that let the original defect
-    sit undetected for eight months."""
+    sit undetected for eight months.
+
+    Two pattern shapes are supported, because one regex contract can't
+    express every producer's log prose:
+
+      two groups (target, note) — the note is tested for a claim word, so
+        the same pattern can match both claims and bare references and let
+        the note decide. This is the default.
+      one group (target)        — the pattern itself IS the claim assertion;
+        anything it matches is a claim. Needed when the claim verb sits
+        *before* the identifier ("**Lesson created**: lesson <id>"), where no
+        single regex can put a claim word into a second group.
+
+    The one-group shape was reported by andrewcrenshaw against the
+    remember/0.2 emitter (knowledge-catalog#207): their log's verb precedes
+    the id and the id carries no claim word, so the two-group contract was
+    unsatisfiable and the pattern parsed nothing.
+    """
     log_path = Path(log_path)
     if not log_path.is_file():
         return {"claims_checked": None, "error": f"log not found: {log_path}",
                 "never_landed": [], "never_landed_count": 0}
-    known = known_targets(stores)
+    known = known_targets(stores, id_key)
+    one_group = claim_re.groups == 1
     claims, missing, date = 0, {}, "?"
+    body_has_claim_word = False
     for line in log_path.read_text(errors="replace").splitlines():
         h = ENTRY_DATE.match(line)
         if h:
             date = h.group(1)
             continue
-        for target, note in claim_re.findall(line):
+        # Only ENTRY lines count toward "this log has claims in it". Headings are
+        # document furniture — "# Directory Update Log" contains "Updat" and would
+        # otherwise make every empty log look like a pattern failure, which is the
+        # exact false alarm this guard exists to avoid.
+        if not line.lstrip().startswith("#") and CLAIM_WORD.search(line):
+            body_has_claim_word = True
+        for hit in claim_re.findall(line):
+            if one_group:
+                target, note = hit, "(implicit — matched claim pattern)"
+            else:
+                target, note = hit
+                if not CLAIM_WORD.search(note) or NOT_A_CLAIM.search(note):
+                    continue                  # a reference, not a claim
             target = target.strip()
-            if not CLAIM_WORD.search(note) or NOT_A_CLAIM.search(note):
-                continue                      # a reference, not a claim
             claims += 1
             if target in known:
                 continue
@@ -120,8 +162,13 @@ def check_log(log_path, stores, claim_re=CLAIM_RE):
            "targets_known": len(known),
            "never_landed_count": len(missing),
            "never_landed": sorted(missing.values(), key=lambda x: x["first_claimed"])}
-    if claims == 0:
-        out["error"] = "0 claims parsed — claim pattern does not match this log"
+    # A zero parse is an alarm ONLY when the log contains entries the pattern
+    # should have matched. An unconditional throw false-alarms on a genuinely
+    # empty corpus — a new bundle with an empty log is clean, not broken.
+    # Refinement contributed by andrewcrenshaw, knowledge-catalog#207.
+    if claims == 0 and body_has_claim_word:
+        out["error"] = ("0 claims parsed, but the log contains creation entries — "
+                        "claim pattern does not match this log's prose")
     return out
 
 
@@ -217,10 +264,36 @@ def selftest():
         assert check_log(bad, [store])["claims_checked"] == 0
         assert "error" in check_log(bad, [store])
 
+        # ...but a genuinely empty log is CLEAN, not an alarm. Unconditional
+        # throwing false-alarms on a new bundle that has simply written nothing.
+        empty = d / "empty.md"
+        empty.write_text("# Directory Update Log\n\n## 2026-01-01\n")
+        e = check_log(empty, [store])
+        assert e["claims_checked"] == 0 and "error" not in e, e
+
         # missing log is an error, not zero findings
         assert "error" in check_log(d / "nope.md", [store])
-    print("OK selftest — claim/reference split, alias resolution, min-dating, "
-          "empty-parse alarm")
+
+        # --- one-group pattern + frontmatter id resolution ------------------
+        # A producer whose claim verb PRECEDES the id, and whose stable ids
+        # live in frontmatter while filenames are summary slugs.
+        store2 = d / "facts"
+        store2.mkdir()
+        (store2 / "some-long-summary-slug.md").write_text(
+            "---\nid: real-001\nsummary: a concept\n---\nbody\n")
+        log2 = d / "log2.md"
+        log2.write_text("# Directory Update Log\n\n## 2026-07-24\n\n"
+                        "* **Lesson created**: lesson real-001 `__row__`\n"
+                        "* **Lesson created**: lesson ghost-999 `__row__`\n")
+        one = re.compile(r"\*\*Lesson created\*\*: lesson (\S+)")
+        # stems alone cannot resolve a frontmatter id — both would look missing
+        assert check_log(log2, [store2], one, id_key="nope")["never_landed_count"] == 2
+        r2 = check_log(log2, [store2], one)
+        assert r2["claims_checked"] == 2, r2
+        assert [x["target"] for x in r2["never_landed"]] == ["ghost-999"], r2
+        assert r2["never_landed"][0]["first_claimed"] == "2026-07-24", r2
+    print("OK selftest — claim/reference split, alias + frontmatter-id resolution, "
+          "min-dating, one-group patterns, empty-vs-unmatched log")
 
 
 def main():
@@ -230,7 +303,14 @@ def main():
     ap.add_argument("--store", action="append", default=[],
                     help="directory of concept files (repeatable)")
     ap.add_argument("--claim-pattern",
-                    help="override the claim regex: 2 groups, (target)(note)")
+                    help="override the claim regex. 2 groups = (target)(note), "
+                         "note tested for a claim word. 1 group = (target), the "
+                         "pattern itself asserts the claim — use when the claim "
+                         "verb precedes the identifier")
+    ap.add_argument("--id-key", default="id",
+                    help="frontmatter key holding a concept's stable id "
+                         "(default: id). Needed when filenames are summary "
+                         "slugs rather than identifiers")
     ap.add_argument("--fixture", help="run against a conformance cases.json")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--json", action="store_true")
@@ -257,7 +337,9 @@ def main():
     if not a.log or not a.store:
         ap.error("--log and at least one --store are required")
     claim_re = re.compile(a.claim_pattern) if a.claim_pattern else CLAIM_RE
-    r = check_log(a.log, a.store, claim_re)
+    if claim_re.groups not in (1, 2):
+        ap.error(f"--claim-pattern needs 1 or 2 capture groups, got {claim_re.groups}")
+    r = check_log(a.log, a.store, claim_re, a.id_key)
     if a.json:
         print(json.dumps(r, indent=2))
     else:

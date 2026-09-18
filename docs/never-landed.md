@@ -40,6 +40,9 @@ never_landed.py --log bundle/log.md --store bundle/facts \
 # conformance
 never_landed.py --fixture cases.json
 never_landed.py --selftest
+
+# against a producer that publishes reconciled removals (see below)
+never_landed.py --log log.md --store wiki/ --absences bundle/.manifest.json
 ```
 
 Stdlib only, no dependencies. Non-zero exit on findings or on a parse failure.
@@ -105,7 +108,16 @@ Getting that right has a sharp edge worth knowing about. The first implementatio
 
 **One false positive worth knowing about:** a renamed concept with a declared alias reads as a missing write unless aliases are resolved. `known_targets()` reads both block and inline `aliases:` frontmatter. Skip that and every rename in the corpus's history fires.
 
+## Absences: closing the "tombstoned looks like never-landed" gap
+
+Without more, a target missing from the store reads as `never_landed` even when a producer deliberately removed it and recorded that. `--absences manifest.json` fixes that by reading the producer's own absence map first: any target whose record carries `presence: "removed"` is excluded outright, not reported as a defect.
+
+That map is only trustworthy if something says the pass that would populate it actually ran — an empty `absences` map and an absence check that never executed look identical from the outside, which is the same collision one level up. So a manifest missing the sibling `absenceReconciliation` key downgrades every otherwise-missing target to `unknown`: neither a confirmed defect nor a clean pass. Reported from a real producer (`remember-okf-sample-bundle`) in [open-knowledge-format#11](https://github.com/GoogleCloudPlatform/open-knowledge-format/issues/11) by @andrewcrenshaw, confirmed independently by @leesharks000.
+
+The same thread reported the key-form mismatch this depends on getting right: that bundle keys `entries` by bare id and `absences` by full URI. `known_absences()` normalises both sides to their final path segment, slugified, before comparing — skip that and a present absence record reads as missing.
+
 ## Related
 
 - [knowledge-catalog#207](https://github.com/GoogleCloudPlatform/knowledge-catalog/issues/207) — deletion semantics; where the third history was proposed and the presence axis settled as sparse (`removed` | `never_landed`, no marker for the default)
+- [open-knowledge-format#11](https://github.com/GoogleCloudPlatform/open-knowledge-format/issues/11) — where the deletion-semantics work moved; the `absences` map + `absenceReconciliation` shape and the exclusivity/key-form findings above
 - The `presence` axis is sparse by design: a producer can't know that no unrecorded prior state existed, so naming a default is an assertion it isn't entitled to make.

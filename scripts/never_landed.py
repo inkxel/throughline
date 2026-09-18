@@ -62,6 +62,39 @@ def slugify(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
 
 
+def _norm_key(k):
+    """Normalise an identifier to the form used for absence lookups — strips
+    a URI down to its final path segment before slugifying, so
+    'https://x/concepts/foo' and 'foo' collide the way they should. Two
+    producers keying the same identity in different forms (bare id in
+    `entries`, full URI in `absences`) is the reported failure mode
+    (andrewcrenshaw / leesharks000, open-knowledge-format#11) — skip this and
+    a present absence record reads as missing.
+    """
+    return slugify(k.rstrip("/").rsplit("/", 1)[-1])
+
+
+def known_absences(path):
+    """A producer's absence map plus its reconciliation-pass marker, read
+    from a manifest JSON file (the shape shipped by remember-okf-sample-bundle,
+    open-knowledge-format#11): `absences` is an id-keyed map of records
+    carrying `presence` ("removed" or "never_landed"); a sibling
+    `absenceReconciliation` key says the absence pass actually ran.
+
+    Returns (removed_ids, ran). `ran=False` means the manifest has no
+    reconciliation marker at all — an empty or absent `absences` map is then
+    indistinguishable from "nobody looked," so callers must NOT trust it as
+    a clean bill of health. Collapsing that distinction is the exact
+    one-level-up version of the bug this whole check exists to catch.
+    """
+    if not path:
+        return set(), False
+    data = json.loads(Path(path).read_text())
+    removed = {_norm_key(k) for k, v in (data.get("absences") or {}).items()
+               if (v or {}).get("presence") == "removed"}
+    return removed, "absenceReconciliation" in data
+
+
 def known_targets(stores, id_key="id"):
     """Every identifier a claim may legitimately resolve to.
 
@@ -99,7 +132,7 @@ def known_targets(stores, id_key="id"):
     return known
 
 
-def check_log(log_path, stores, claim_re=CLAIM_RE, id_key="id"):
+def check_log(log_path, stores, claim_re=CLAIM_RE, id_key="id", absences_path=None):
     """Every write the log claims, checked against the store. Always returns a
     denominator — 'found nothing' must never be indistinguishable from
     'looked nowhere', which is the failure mode that let the original defect
@@ -120,14 +153,21 @@ def check_log(log_path, stores, claim_re=CLAIM_RE, id_key="id"):
     remember/0.2 emitter (knowledge-catalog#207): their log's verb precedes
     the id and the id carries no claim word, so the two-group contract was
     unsatisfiable and the pattern parsed nothing.
+
+    `absences_path`, if given, points at a manifest carrying a reconciled
+    `absences` map (see known_absences()) — a target claimed by the log but
+    deliberately removed and reconciled there is excluded from never_landed
+    entirely, and every otherwise-missing target is downgraded to `unknown`
+    if the manifest can't prove its absence pass ran at all.
     """
     log_path = Path(log_path)
     if not log_path.is_file():
         return {"claims_checked": None, "error": f"log not found: {log_path}",
                 "never_landed": [], "never_landed_count": 0}
     known = known_targets(stores, id_key)
+    removed_ids, absence_pass_ran = known_absences(absences_path)
     one_group = claim_re.groups == 1
-    claims, missing, date = 0, {}, "?"
+    claims, missing, unknown, date = 0, {}, {}, "?"
     body_has_claim_word = False
     for line in log_path.read_text(errors="replace").splitlines():
         h = ENTRY_DATE.match(line)
@@ -151,8 +191,18 @@ def check_log(log_path, stores, claim_re=CLAIM_RE, id_key="id"):
             claims += 1
             if target in known:
                 continue
-            m = missing.setdefault(target, {"target": target, "first_claimed": date,
-                                            "claims": 0, "note": note.strip()[:80]})
+            # Read absences BEFORE deciding never_landed. A reconciled removal
+            # (presence: "removed") is not a bug and is excluded outright. But
+            # if the absence pass never ran, an empty map proves nothing — the
+            # finding is UNKNOWN, not a clean pass and not a confirmed defect.
+            if absences_path and not absence_pass_ran:
+                bucket = unknown
+            elif _norm_key(target) in removed_ids:
+                continue
+            else:
+                bucket = missing
+            m = bucket.setdefault(target, {"target": target, "first_claimed": date,
+                                           "claims": 0, "note": note.strip()[:80]})
             m["claims"] += 1
             # Logs are not reliably chronological — backfill blocks land out of
             # order, so take the min rather than the first one seen.
@@ -161,7 +211,9 @@ def check_log(log_path, stores, claim_re=CLAIM_RE, id_key="id"):
     out = {"claims_checked": claims,
            "targets_known": len(known),
            "never_landed_count": len(missing),
-           "never_landed": sorted(missing.values(), key=lambda x: x["first_claimed"])}
+           "never_landed": sorted(missing.values(), key=lambda x: x["first_claimed"]),
+           "unknown_count": len(unknown),
+           "unknown": sorted(unknown.values(), key=lambda x: x["first_claimed"])}
     # A zero parse is an alarm ONLY when the log contains entries the pattern
     # should have matched. An unconditional throw false-alarms on a genuinely
     # empty corpus — a new bundle with an empty log is clean, not broken.
@@ -292,8 +344,31 @@ def selftest():
         assert r2["claims_checked"] == 2, r2
         assert [x["target"] for x in r2["never_landed"]] == ["ghost-999"], r2
         assert r2["never_landed"][0]["first_claimed"] == "2026-07-24", r2
+
+        # --- absences: removed / unknown / never_landed stay separable ------
+        log3 = d / "log3.md"
+        log3.write_text("### 2026-09-01 — entry\n"
+                        "- [[tombstoned]] (created), [[vanished]] (created)\n")
+        # key-form mismatch: entries would be keyed bare, absences by full URI
+        manifest = d / "manifest.json"
+        manifest.write_text(json.dumps({
+            "absenceReconciliation": {"status": "ok", "parsedCount": 1},
+            "absences": {"https://x.example/concepts/tombstoned":
+                         {"presence": "removed"}}}))
+        r3 = check_log(log3, [store], absences_path=manifest)
+        assert [x["target"] for x in r3["never_landed"]] == ["vanished"], r3
+        assert r3["unknown_count"] == 0, r3       # reconciliation ran — trust the map
+
+        # pass never ran at all: an empty/absent map proves nothing, so both
+        # targets are UNKNOWN, not silently clean and not confirmed defects
+        no_pass = d / "no-pass.json"
+        no_pass.write_text(json.dumps({"absences": {}}))
+        r4 = check_log(log3, [store], absences_path=no_pass)
+        assert r4["never_landed_count"] == 0, r4
+        assert sorted(x["target"] for x in r4["unknown"]) == ["tombstoned", "vanished"], r4
     print("OK selftest — claim/reference split, alias + frontmatter-id resolution, "
-          "min-dating, one-group patterns, empty-vs-unmatched log")
+          "min-dating, one-group patterns, empty-vs-unmatched log, "
+          "absence reconciliation (removed/unknown/never_landed)")
 
 
 def main():
@@ -311,6 +386,12 @@ def main():
                     help="frontmatter key holding a concept's stable id "
                          "(default: id). Needed when filenames are summary "
                          "slugs rather than identifiers")
+    ap.add_argument("--absences",
+                    help="manifest JSON with an `absences` map + "
+                         "`absenceReconciliation` marker (open-knowledge-format#11 "
+                         "shape) — reconciled removals are excluded, and findings "
+                         "become unknown rather than never_landed if the marker "
+                         "is missing")
     ap.add_argument("--fixture", help="run against a conformance cases.json")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--json", action="store_true")
@@ -339,7 +420,7 @@ def main():
     claim_re = re.compile(a.claim_pattern) if a.claim_pattern else CLAIM_RE
     if claim_re.groups not in (1, 2):
         ap.error(f"--claim-pattern needs 1 or 2 capture groups, got {claim_re.groups}")
-    r = check_log(a.log, a.store, claim_re, a.id_key)
+    r = check_log(a.log, a.store, claim_re, a.id_key, a.absences)
     if a.json:
         print(json.dumps(r, indent=2))
     else:
@@ -347,11 +428,15 @@ def main():
             print(f"ERROR: {r['error']}", file=sys.stderr)
         print(f"{r['claims_checked']} claims checked against "
               f"{r['targets_known']} known targets — "
-              f"{r['never_landed_count']} never landed")
+              f"{r['never_landed_count']} never landed, "
+              f"{r['unknown_count']} unknown")
         for x in r["never_landed"]:
             print(f"  {x['first_claimed']}  {x['target']}  "
                   f"({x['claims']}x) — {x['note']}")
-    return 1 if r.get("error") or r["never_landed_count"] else 0
+        for x in r["unknown"]:
+            print(f"  {x['first_claimed']}  {x['target']}  "
+                  f"({x['claims']}x) — UNKNOWN (absence pass never ran) — {x['note']}")
+    return 1 if r.get("error") or r["never_landed_count"] or r["unknown_count"] else 0
 
 
 if __name__ == "__main__":
